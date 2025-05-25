@@ -509,7 +509,7 @@ const FamilyDashboard = () => {
         return acc;
       }, {});
 
-      const response = await fetch('https://us-central1-todo-web-a57a0.cloudfunctions.net/sendMealPlanEmails', {
+      const response = await fetch('https://todo-app-backend-a1gr.onrender.com', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
