@@ -1,8 +1,7 @@
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
+import { initializeApp } from "firebase/app"
+import { getAnalytics } from "firebase/analytics"
 import { getAuth, GoogleAuthProvider } from "firebase/auth"
 import { getFirestore } from "firebase/firestore"
-
 
 const firebaseConfig = {
   apiKey: "AIzaSyCDLWSJzeHDztUxUobZBkEIMSrMfLdidRE",
@@ -11,12 +10,11 @@ const firebaseConfig = {
   storageBucket: "todo-web-a57a0.firebasestorage.app",
   messagingSenderId: "271944674192",
   appId: "1:271944674192:web:dcaeb44fabce6af407a115",
-  measurementId: "G-16DHRLB31K"
-};
+  measurementId: "G-16DHRLB31K",
+}
 
-
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
-export const auth = getAuth(app);
-export const googleProvider = new GoogleAuthProvider();
-export const db = getFirestore(app);
+export const app = initializeApp(firebaseConfig)
+const analytics = getAnalytics(app)
+export const auth = getAuth(app)
+export const googleProvider = new GoogleAuthProvider()
+export const db = getFirestore(app)
