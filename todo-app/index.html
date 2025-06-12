@@ -2,19 +2,25 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/png" href="/icons/32.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FoodPlanner - Planification de Repas Familiale</title>
     
     <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#764ba2">
     <meta name="description" content="Planifiez vos repas en famille et gérez vos courses facilement">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Family Planner">
     
     <!-- PWA Icons -->
-    <link rel="apple-touch-icon" href="/logo192.png">
+    <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/180.png">
+    <link rel="apple-touch-icon" sizes="167x167" href="/icons/167.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/16.png">
+    <link rel="mask-icon" href="/icons/icon-512x512.png" color="#764ba2">
     <link rel="manifest" href="/manifest.json">
     
     <!-- Bootstrap 5 CSS -->
@@ -33,14 +39,15 @@
     <!-- Service Worker Registration -->
     <script>
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/service-worker.js')
-            .then(registration => {
-              console.log('Service Worker enregistré avec succès:', registration);
-            })
-            .catch(error => {
-              console.log('Erreur lors de l\'enregistrement du Service Worker:', error);
+        window.addEventListener('load', async () => {
+          try {
+            const registration = await navigator.serviceWorker.register('/service-worker.js', {
+              scope: '/'
             });
+            console.log('Service Worker enregistré avec succès:', registration);
+          } catch (error) {
+            console.error('Erreur lors de l\'enregistrement du Service Worker:', error);
+          }
         });
       }
     </script>

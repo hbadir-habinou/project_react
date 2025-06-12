@@ -24,14 +24,21 @@
             border-radius: 1rem;
             backdrop-filter: blur(10px);
             box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            max-width: 600px;
+            width: 100%;
         }
         h1 {
             font-size: 2rem;
             margin-bottom: 1rem;
         }
+        h2 {
+            font-size: 1.5rem;
+            margin: 1.5rem 0 1rem;
+        }
         p {
             font-size: 1.1rem;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
+            line-height: 1.6;
         }
         .icon {
             font-size: 4rem;
@@ -46,20 +53,92 @@
             font-size: 1.1rem;
             cursor: pointer;
             transition: transform 0.2s;
+            margin: 0.5rem;
         }
         .retry-button:hover {
             transform: scale(1.05);
+        }
+        .features-list {
+            text-align: left;
+            margin: 1rem 0;
+            padding-left: 1.5rem;
+        }
+        .features-list li {
+            margin-bottom: 0.5rem;
+        }
+        .status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-offline .status-dot {
+            background-color: #ff4444;
+        }
+        .status-checking .status-dot {
+            background-color: #ffbb33;
+        }
+        .status-online .status-dot {
+            background-color: #00C851;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="icon">📡</div>
-        <h1>Vous êtes hors ligne</h1>
-        <p>Il semble que vous n'ayez pas de connexion internet.<br>Certaines fonctionnalités peuvent ne pas être disponibles.</p>
-        <button class="retry-button" onclick="window.location.reload()">
-            Réessayer
+        <h1>Mode Hors Ligne</h1>
+        <div id="connectionStatus" class="status status-offline">
+            <div class="status-dot"></div>
+            <span>Hors ligne</span>
+        </div>
+        
+        <p>Pas de connexion internet, mais ne vous inquiétez pas ! Votre Family Meal Planner continue de fonctionner avec les données mises en cache.</p>
+
+        <h2>Fonctionnalités disponibles hors ligne :</h2>
+        <ul class="features-list">
+            <li>Consultation de vos menus enregistrés</li>
+            <li>Accès à votre liste de courses sauvegardée</li>
+            <li>Visualisation des recettes en cache</li>
+            <li>Consultation des profils familiaux</li>
+        </ul>
+
+        <p>Les modifications que vous effectuerez seront synchronisées automatiquement une fois la connexion rétablie.</p>
+
+        <button class="retry-button" onclick="checkConnection()">
+            Vérifier la connexion
+        </button>
+        <button class="retry-button" onclick="window.location.href='/'">
+            Retour à l'accueil
         </button>
     </div>
+
+    <script>
+        function checkConnection() {
+            const statusEl = document.getElementById('connectionStatus');
+            statusEl.className = 'status status-checking';
+            statusEl.innerHTML = '<div class="status-dot"></div><span>Vérification...</span>';
+
+            fetch('/')
+                .then(() => {
+                    statusEl.className = 'status status-online';
+                    statusEl.innerHTML = '<div class="status-dot"></div><span>Connecté</span>';
+                    setTimeout(() => window.location.reload(), 1000);
+                })
+                .catch(() => {
+                    statusEl.className = 'status status-offline';
+                    statusEl.innerHTML = '<div class="status-dot"></div><span>Toujours hors ligne</span>';
+                });
+        }
+
+        // Vérifier périodiquement la connexion
+        setInterval(checkConnection, 30000);
+    </script>
 </body>
 </html> 

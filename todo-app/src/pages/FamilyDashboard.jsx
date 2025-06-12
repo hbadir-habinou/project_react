@@ -12,7 +12,12 @@ import FamilyProfileSharing from "../components/FamilyProfileSharing"
 import { useLanguage } from "../contexts/LanguageContext"
 import { jsPDF } from "jspdf"
 import AIChat from "../components/AIChat"
+import NearbyStores from "../components/NearbyStores"
 import { notificationService } from "../services/notificationService"
+import { offlineService } from "../services/offlineService"
+import DashboardOverview from '../components/DashboardOverview';
+import Cart from '../components/Cart';
+import { FaShoppingCart } from 'react-icons/fa';
 
 const FamilyDashboard = () => {
   const { t } = useLanguage()
@@ -34,6 +39,7 @@ const FamilyDashboard = () => {
   const [activeTab, setActiveTab] = useState("members")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
+  const [showMap, setShowMap] = useState(false)
   const [emailStatus, setEmailStatus] = useState("")
   const [recipes, setRecipes] = useState([])
   const [dbRecipes, setDbRecipes] = useState([])
@@ -57,6 +63,10 @@ const FamilyDashboard = () => {
   const [isReadOnly, setIsReadOnly] = useState(false)
   const [familyCode, setFamilyCode] = useState("")
   const [isGuestMode, setIsGuestMode] = useState(false)
+  const [isOffline, setIsOffline] = useState(false)
+  const [cartItems, setCartItems] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [selectedStores, setSelectedStores] = useState([]);
 
   const weekId = "2025-W22"
 
@@ -181,6 +191,7 @@ const FamilyDashboard = () => {
       guestModeMessage: "Vous êtes connecté en mode invité avec accès en lecture seule.",
       normalMode: "Mode Normal",
       normalModeMessage: "Vous avez un accès complet au dashboard familial.",
+      addIngredient: "Ajouter un ingrédient",
     },
     en: {
       checkAll: "Check All",
@@ -254,6 +265,7 @@ const FamilyDashboard = () => {
       actionNotAllowed: "Action not allowed: read-only mode",
       guestMode: "Guest Mode",
       guestModeMessage: "You are connected in guest mode with read-only access.",
+      addIngredient: "Add Ingredient",
     },
   }
 
@@ -562,7 +574,80 @@ const FamilyDashboard = () => {
   useEffect(() => {
     console.log("useEffect déclenché")
     fetchUserData()
+
+    // Écouter les changements de connectivité
+    const handleOnline = () => {
+      setIsOffline(false)
+      console.log("Application en ligne - synchronisation des données...")
+      syncOfflineData()
+    }
+
+    const handleOffline = () => {
+      setIsOffline(true)
+      console.log("Application hors ligne - passage en mode local")
+    }
+
+    document.addEventListener('appOnline', handleOnline)
+    document.addEventListener('appOffline', handleOffline)
+    setIsOffline(!navigator.onLine)
+
+    return () => {
+      document.removeEventListener('appOnline', handleOnline)
+      document.removeEventListener('appOffline', handleOffline)
+    }
   }, [navigate, t])
+
+  // Fonction pour synchroniser les données hors ligne
+  const syncOfflineData = async () => {
+    try {
+      console.log('Début de la synchronisation des données hors ligne');
+      
+      // Synchroniser les ingrédients
+      const offlineIngredients = await offlineService.getData('ingredients') || [];
+      console.log('Ingrédients hors ligne trouvés:', offlineIngredients.length);
+      
+      for (const ingredient of offlineIngredients) {
+        if (ingredient.isOffline) {
+          try {
+            // Supprimer les propriétés spécifiques au mode hors ligne
+            const { isOffline, id, ...ingredientData } = ingredient;
+            await handleAddIngredient(ingredientData);
+            console.log('Ingrédient synchronisé avec succès:', ingredient.name);
+          } catch (err) {
+            console.error('Erreur lors de la synchronisation de l\'ingrédient:', ingredient.name, err);
+          }
+        }
+      }
+      
+      // Une fois la synchronisation terminée, supprimer les données hors ligne
+      await offlineService.removeData('ingredients');
+      console.log('Données hors ligne supprimées après synchronisation');
+
+      // Synchroniser les plats
+      const offlineDishes = await offlineService.getData('dishes') || [];
+      for (const dish of offlineDishes) {
+        if (dish.isOffline) {
+          const { isOffline, id, ...dishData } = dish;
+          await handleAddDish(dishData, true);
+        }
+      }
+      await offlineService.removeData('dishes');
+
+      // Synchroniser les membres de la famille
+      const offlineMembers = await offlineService.getData('familyMembers') || [];
+      for (const member of offlineMembers) {
+        if (member.isOffline) {
+          const { isOffline, id, ...memberData } = member;
+          await handleAddMember(memberData);
+        }
+      }
+      await offlineService.removeData('familyMembers');
+
+      console.log('Synchronisation terminée avec succès');
+    } catch (error) {
+      console.error('Erreur lors de la synchronisation des données:', error);
+    }
+  };
 
   const formatRelativeTime = (timestamp) => {
     const now = new Date()
@@ -933,14 +1018,22 @@ const FamilyDashboard = () => {
   }, [])
 
   const handleAddMember = async (memberData) => {
-    if (isReadOnly) {
-      setError(tDashboard("actionNotAllowed"))
-      return
-    }
-
-    setLoading(true)
-    setError("")
     try {
+      if (isOffline) {
+        const members = await offlineService.getData('familyMembers') || []
+        members.push({ ...memberData, id: Date.now().toString() })
+        await offlineService.saveData('familyMembers', members)
+        setFamilyMembers(members)
+        return
+      }
+
+      if (isReadOnly) {
+        setError(tDashboard("actionNotAllowed"))
+        return
+      }
+
+      setLoading(true)
+      setError("")
       const currentUserId = getCurrentUserId()
       if (!currentUserId) {
         throw new Error("Aucun utilisateur authentifié")
@@ -1052,14 +1145,22 @@ const FamilyDashboard = () => {
   }
 
   const handleAddDish = async (dishData, isCombined = false) => {
-    if (isReadOnly) {
-      setError(tDashboard("actionNotAllowed"))
-      return
-    }
-
-    setLoading(true)
-    setError("")
     try {
+      if (isOffline) {
+        const dishes = await offlineService.getData('dishes') || []
+        dishes.push({ ...dishData, id: Date.now().toString() })
+        await offlineService.saveData('dishes', dishes)
+        setDishes(dishes)
+        return
+      }
+
+      if (isReadOnly) {
+        setError(tDashboard("actionNotAllowed"))
+        return
+      }
+
+      setLoading(true)
+      setError("")
       const currentUserId = getCurrentUserId()
       if (!currentUserId) {
         throw new Error("Aucun utilisateur authentifié")
@@ -1161,31 +1262,59 @@ const FamilyDashboard = () => {
   }
 
   const handleAddIngredient = async (ingredientData) => {
-    if (isReadOnly) {
-      setError(tDashboard("actionNotAllowed"))
-      return
-    }
-
-    setLoading(true)
-    setError("")
     try {
-      const currentUserId = getCurrentUserId()
-      if (!currentUserId) {
-        throw new Error("Aucun utilisateur authentifié")
+      if (isOffline) {
+        console.log('Mode hors ligne - Sauvegarde locale de l\'ingrédient');
+        const ingredients = await offlineService.getData('ingredients') || [];
+        const newIngredient = {
+          ...ingredientData,
+          id: `offline_${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          price: Number.parseFloat(ingredientData.price) || 0,
+          isOffline: true
+        };
+        ingredients.push(newIngredient);
+        await offlineService.saveData('ingredients', ingredients);
+        setIngredients(prevIngredients => [...prevIngredients, newIngredient]);
+        setShowIngredientForm(false);
+        return;
       }
-      const ingredientsCollectionRef = collection(db, "users", currentUserId, "ingredients")
-      await addDoc(ingredientsCollectionRef, {
+
+      if (isReadOnly) {
+        setError(tDashboard("actionNotAllowed"));
+        return;
+      }
+
+      setLoading(true);
+      setError("");
+      const currentUserId = getCurrentUserId();
+      if (!currentUserId) {
+        throw new Error("Aucun utilisateur authentifié");
+      }
+
+      const ingredientsCollectionRef = collection(db, "users", currentUserId, "ingredients");
+      const docRef = await addDoc(ingredientsCollectionRef, {
         ...ingredientData,
         price: Number.parseFloat(ingredientData.price) || 0,
-      })
-      setShowIngredientForm(false)
+        createdAt: new Date().toISOString()
+      });
+
+      // Ajouter l'ingrédient à l'état local immédiatement
+      const newIngredient = {
+        ...ingredientData,
+        id: docRef.id,
+        price: Number.parseFloat(ingredientData.price) || 0,
+        createdAt: new Date().toISOString()
+      };
+      setIngredients(prevIngredients => [...prevIngredients, newIngredient]);
+      setShowIngredientForm(false);
     } catch (err) {
-      console.error("Erreur lors de l'ajout de l'ingrédient : ", err)
-      setError(`Erreur lors de l'ajout de l'ingrédient : ${err.message}`)
+      console.error("Erreur lors de l'ajout de l'ingrédient : ", err);
+      setError(`Erreur lors de l'ajout de l'ingrédient : ${err.message}`);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleEditIngredient = (ingredient) => {
     if (isReadOnly) {
@@ -1917,6 +2046,96 @@ const FamilyDashboard = () => {
     (recipe) => recipe && recipe.name && recipe.name.toLowerCase().includes(searchQuery.toLowerCase()),
   )
 
+  // Ajouter cette fonction pour gérer les notifications
+  const addNotification = (title, message) => {
+    setNotifications(prev => [{
+      title,
+      message,
+      timestamp: new Date().toISOString()
+    }, ...prev]);
+  };
+
+  // Fonction pour ajouter les éléments non cochés au panier
+  const addToCart = () => {
+    const uncheckedItems = shoppingList.filter(item => !item.purchased);
+    setCartItems(prevItems => [...prevItems, ...uncheckedItems]);
+  };
+
+  // Fonction pour soumettre les commandes aux vendeurs
+  const handleOrderSubmit = async (ordersByVendor) => {
+    try {
+      const newOrders = Object.entries(ordersByVendor).map(([vendor, items]) => ({
+        id: Date.now().toString(),
+        vendor,
+        items,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        totalAmount: items.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+      }));
+
+      setOrders(prevOrders => [...prevOrders, ...newOrders]);
+      setCartItems([]); // Vider le panier après la soumission
+
+      // Ajouter une notification
+      addNotification(
+        'Commandes soumises',
+        `Vos commandes ont été envoyées aux vendeurs`
+      );
+    } catch (error) {
+      console.error('Erreur lors de la soumission des commandes:', error);
+    }
+  };
+
+  // Fonction pour confirmer la livraison
+  const handleDeliveryConfirm = async (orderId) => {
+    try {
+      setOrders(prevOrders =>
+        prevOrders.map(order =>
+          order.id === orderId
+            ? { ...order, status: 'delivered' }
+            : order
+        )
+      );
+
+      // Mettre à jour le stock
+      const order = orders.find(o => o.id === orderId);
+      if (order) {
+        const updatedIngredients = [...ingredients];
+        order.items.forEach(item => {
+          const existingIngredient = updatedIngredients.find(
+            ing => ing.name === item.name
+          );
+          if (existingIngredient) {
+            existingIngredient.quantity += item.quantity;
+          } else {
+            updatedIngredients.push({
+              ...item,
+              id: Date.now().toString(),
+              category: item.category
+            });
+          }
+        });
+        setIngredients(updatedIngredients);
+      }
+
+      addNotification(
+        'Livraison confirmée',
+        `Les articles ont été ajoutés à votre stock`
+      );
+    } catch (error) {
+      console.error('Erreur lors de la confirmation de livraison:', error);
+    }
+  };
+
+  // Fonction pour gérer la sélection des magasins
+  const handleStoreSelect = (store) => {
+    setSelectedStores(prev =>
+      prev.includes(store.id)
+        ? prev.filter(id => id !== store.id)
+        : [...prev, store.id]
+    );
+  };
+
   if (loading) {
     return (
       <div
@@ -2269,6 +2488,14 @@ const FamilyDashboard = () => {
                 >
                   <i className="fas fa-carrot me-2"></i>
                   Ingrédients
+                </button>
+                <button
+                  className={`nav-link ${activeTab === "stores" ? "active" : ""}`}
+                  onClick={() => setActiveTab("stores")}
+                  style={{ borderRadius: "15px" }}
+                >
+                  <i className="fas fa-store me-2"></i>
+                  Magasins
                 </button>
               </li>
               <li className="nav-item">
@@ -2833,129 +3060,118 @@ const FamilyDashboard = () => {
               {activeTab === "recipeCollection" && <RecipeCollection />}
 
               {activeTab === "ingredients" && (
-                <div>
-                  {showIngredientForm && !isReadOnly ? (
-                    <IngredientForm
-                      ingredient={editingIngredient}
-                      onSave={editingIngredient ? handleSaveEditedIngredient : handleAddIngredient}
-                      onCancel={() => {
-                        setShowIngredientForm(false)
-                        setEditingIngredient(null)
-                      }}
-                      onDelete={editingIngredient ? handleDeleteIngredient : undefined}
-                      isNew={!editingIngredient}
-                    />
-                  ) : (
-                    <div>
-                      <h4 className="mb-4 text-white fw-bold">
-                        <i className="fas fa-warehouse me-2"></i>
-                        Inventaire des Ingrédients
-                        {(isReadOnly || isGuestMode) && (
-                          <span className="badge bg-info ms-2">
-                            <i className="fas fa-eye me-1"></i>
-                            Consultation
-                          </span>
-                        )}
-                      </h4>
-                      <div className="row">
-                        {filteredIngredients.map((ingredient) => (
-                          <div key={ingredient.id} className="col-lg-6 col-xl-3 mb-4">
-                            <div
-                              className="card h-100 shadow-lg border-0"
-                              style={{
-                                borderRadius: "20px",
-                                background: "rgba(255, 255, 255, 0.95)",
-                                backdropFilter: "blur(10px)",
-                              }}
-                            >
-                              <div className="card-body p-4">
-                                <h5 className="card-title d-flex align-items-center mb-3">
-                                  <i className="fas fa-carrot me-2 text-success"></i>
-                                  {ingredient.name}
-                                </h5>
-                                <div className="mb-3">
-                                  <div className="d-flex justify-content-between mb-2">
-                                    <span>Quantité:</span>
-                                    <strong>
-                                      {ingredient.quantity} {ingredient.unit}
-                                    </strong>
-                                  </div>
-                                  <div className="d-flex justify-content-between mb-2">
-                                    <span>Prix:</span>
-                                    <strong>{ingredient.price} FCFA</strong>
-                                  </div>
-                                  <div className="d-flex justify-content-between mb-2">
-                                    <span>Catégorie:</span>
-                                    <span className="badge bg-info" style={{ borderRadius: "10px" }}>
-                                      {ingredient.category}
-                                    </span>
-                                  </div>
-                                  {ingredient.expirationDate && (
-                                    <div className="d-flex justify-content-between">
-                                      <span>Expiration:</span>
-                                      <span className="text-warning fw-bold">{ingredient.expirationDate}</span>
-                                    </div>
-                                  )}
-                                </div>
-                                {!isReadOnly && (
-                                  <div className="d-flex gap-2">
-                                    <button
-                                      className="btn btn-warning btn-sm flex-fill"
-                                      onClick={() => handleEditIngredient(ingredient)}
-                                      style={{ borderRadius: "15px" }}
-                                    >
-                                      <i className="fas fa-edit me-1"></i>
-                                      Modifier
-                                    </button>
-                                    <button
-                                      className="btn btn-danger btn-sm"
-                                      onClick={() => handleDeleteIngredient(ingredient.id)}
-                                      style={{ borderRadius: "15px" }}
-                                    >
-                                      <i className="fas fa-trash"></i>
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                <>
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-2xl font-bold">{tDashboard("ingredients")}</h2>
+                    <button
+                      onClick={() => setShowIngredientForm(true)}
+                      className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded"
+                    >
+                      {tDashboard("addIngredient")}
+                    </button>
+                  </div>
 
-                      <h4 className="mt-5 mb-4 text-white fw-bold">
-                        <i className="fas fa-list-ul me-2"></i>
-                        Ingrédients Requis
-                      </h4>
-                      <div className="row">
-                        {getAllIngredients().map((item, index) => (
-                          <div key={index} className="col-lg-6 col-md-12 mb-3">
-                            <div
-                              className="card shadow border-0"
-                              style={{
-                                borderRadius: "15px",
-                                background: "rgba(255, 255, 255, 0.9)",
-                                backdropFilter: "blur(10px)",
-                              }}
-                            >
-                              <div className="card-body p-3">
-                                <h6 className="card-title d-flex align-items-center mb-2">
-                                  <i className="fas fa-shopping-basket me-2 text-primary"></i>
-                                  {item.name}
-                                </h6>
-                                <p className="card-text d-flex align-items-center mb-0">
-                                  Total requis:{" "}
-                                  <strong className="ms-auto">
-                                    {item.quantity} {item.unit}
-                                  </strong>
-                                </p>
+
+
+                  {/* Liste des ingrédients */}
+                  <div className="mt-4">
+                    {filteredIngredients.map((ingredient) => (
+                      <div key={ingredient.id} className="col-lg-6 col-xl-3 mb-4">
+                        <div
+                          className="card h-100 shadow-lg border-0"
+                          style={{
+                            borderRadius: "20px",
+                            background: "rgba(255, 255, 255, 0.95)",
+                            backdropFilter: "blur(10px)",
+                          }}
+                        >
+                          <div className="card-body p-4">
+                            <h5 className="card-title d-flex align-items-center mb-3">
+                              <i className="fas fa-carrot me-2 text-success"></i>
+                              {ingredient.name}
+                            </h5>
+                            <div className="mb-3">
+                              <div className="d-flex justify-content-between mb-2">
+                                <span>Quantité:</span>
+                                <strong>
+                                  {ingredient.quantity} {ingredient.unit}
+                                </strong>
                               </div>
+                              <div className="d-flex justify-content-between mb-2">
+                                <span>Prix:</span>
+                                <strong>{ingredient.price} FCFA</strong>
+                              </div>
+                              <div className="d-flex justify-content-between mb-2">
+                                <span>Catégorie:</span>
+                                <span className="badge bg-info" style={{ borderRadius: "10px" }}>
+                                  {ingredient.category}
+                                </span>
+                              </div>
+                              {ingredient.expirationDate && (
+                                <div className="d-flex justify-content-between">
+                                  <span>Expiration:</span>
+                                  <span className="text-warning fw-bold">{ingredient.expirationDate}</span>
+                                </div>
+                              )}
                             </div>
+                            {!isReadOnly && (
+                              <div className="d-flex gap-2">
+                                <button
+                                  className="btn btn-warning btn-sm flex-fill"
+                                  onClick={() => handleEditIngredient(ingredient)}
+                                  style={{ borderRadius: "15px" }}
+                                >
+                                  <i className="fas fa-edit me-1"></i>
+                                  Modifier
+                                </button>
+                                <button
+                                  className="btn btn-danger btn-sm"
+                                  onClick={() => handleDeleteIngredient(ingredient.id)}
+                                  style={{ borderRadius: "15px" }}
+                                >
+                                  <i className="fas fa-trash"></i>
+                                </button>
+                              </div>
+                            )}
                           </div>
-                        ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {activeTab === "stores" && (
+                <>
+                  <div className="card shadow-lg border-0" style={{
+                    borderRadius: "20px",
+                    background: "rgba(255, 255, 255, 0.95)",
+                    backdropFilter: "blur(10px)",
+                  }}>
+                    <div className="card-body p-4">
+                      <h2 className="text-2xl font-bold mb-4">
+                        <i className="fas fa-store me-2"></i>
+                        Magasins à proximité
+                      </h2>
+                      <div className="mt-4">
+                        <NearbyStores
+                          onStoreSelect={(store, isChecked) => {
+                            if (isChecked) {
+                              handleAddIngredient({
+                                name: `${store.name} (Référence)`,
+                                quantity: 1,
+                                unit: "ref",
+                                category: "Magasins",
+                                notes: `Adresse: ${store.vicinity}\nNote: ${store.rating || 'N/A'}/5`,
+                              });
+                            }
+                          }}
+                          selectedStores={selectedStores}
+                        />
                       </div>
                     </div>
-                  )}
-                </div>
+                  </div>
+                </>
               )}
 
               {activeTab === "planning" && (

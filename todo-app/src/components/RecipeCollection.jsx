@@ -4,6 +4,8 @@ import { useState, useEffect } from "react"
 import { auth, db } from "../firebase"
 import { collection, onSnapshot, addDoc, updateDoc, doc, arrayUnion, arrayRemove } from "firebase/firestore"
 import { useLanguage } from "../contexts/LanguageContext"
+import { generateRecipe } from '../services/aiService'
+import ReactMarkdown from 'react-markdown'
 
 const RecipeCollection = () => {
   const { t } = useLanguage()
@@ -17,6 +19,8 @@ const RecipeCollection = () => {
   const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [filterBy, setFilterBy] = useState("all") // all, liked, commented
+  const [generatedRecipe, setGeneratedRecipe] = useState(null)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     // Écouter les recettes globales (recipes)
@@ -179,6 +183,20 @@ const RecipeCollection = () => {
     return matchesSearch
   })
 
+  const handleGenerateRecipe = async (recipe) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const recipeText = await generateRecipe(recipe)
+      setGeneratedRecipe({ id: recipe.id, text: recipeText })
+    } catch (err) {
+      setError("Erreur lors de la génération de la recette")
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="recipe-collection">
       <div className="d-flex justify-content-between align-items-center mb-4">
@@ -192,7 +210,6 @@ const RecipeCollection = () => {
             className="form-control"
             placeholder="Rechercher une recette..."
             value={searchQuery}
-bein_value
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{ width: "250px" }}
           />
@@ -351,7 +368,7 @@ bein_value
                         className={`comment-item p-2 mb-2 rounded ${comment.replyTo ? "ms-4 bg-light" : "bg-white border"}`}
                       >
                         <div className="d-flex justify-content-between align-items-start">
-                          yay <strong className="text-primary">{comment.userEmail}</strong>
+                          <strong className="text-primary">{comment.userEmail}</strong>
                           {comment.replyTo && (
                             <small className="text-muted ms-2">→ {comment.replyTo.userEmail}</small>
                           )}
@@ -370,6 +387,21 @@ bein_value
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {generatedRecipe && (
+        <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+          <h4 className="text-lg font-semibold mb-2">Recette Générée</h4>
+          <div className="prose max-w-none">
+            <ReactMarkdown>{generatedRecipe.text}</ReactMarkdown>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-4 p-4 bg-red-50 text-red-600 rounded-lg">
+          {error}
         </div>
       )}
     </div>

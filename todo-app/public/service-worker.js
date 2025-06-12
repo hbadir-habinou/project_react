@@ -1,77 +1,122 @@
-const CACHE_NAME = 'family-planner-v1';
-const STATIC_ASSETS = [
+const CACHE_NAME = 'meal-planner-v1';
+const DYNAMIC_CACHE = 'dynamic-v1';
+
+// Liste des ressources à mettre en cache
+const urlsToCache = [
   '/',
   '/index.html',
+  '/offline.html',
   '/manifest.json',
-  '/favicon.ico',
-  '/logo192.png',
-  '/logo512.png',
-  '/static/js/main.js',
-  '/static/css/main.css'
+  '/icons/icon-192x192.png',
+  '/icons/icon-512x512.png'
 ];
 
-// Installation du Service Worker
+// Installation du service worker
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
         console.log('Cache ouvert');
-        return cache.addAll(STATIC_ASSETS);
+        return cache.addAll(urlsToCache);
       })
+      .then(() => self.skipWaiting()) // Force l'activation immédiate
   );
 });
 
-// Activation du Service Worker
+// Activation du service worker
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    })
+    Promise.all([
+      // Nettoyage des anciens caches
+      caches.keys().then((cacheNames) => {
+        return Promise.all(
+          cacheNames.map((cacheName) => {
+            if (cacheName !== CACHE_NAME && cacheName !== DYNAMIC_CACHE) {
+              console.log('Suppression de l\'ancien cache:', cacheName);
+              return caches.delete(cacheName);
+            }
+          })
+        );
+      }),
+      // Prend le contrôle immédiatement
+      self.clients.claim()
+    ])
   );
 });
 
-// Stratégie de cache : Network First avec fallback sur le cache
+// Interception des requêtes
 self.addEventListener('fetch', (event) => {
-  // Ne pas mettre en cache les requêtes POST
-  if (event.request.method !== 'GET') {
-    return;
-  }
-
-  // Ne pas mettre en cache les requêtes d'API
-  if (event.request.url.includes('/api/')) {
+  // Ignorer les requêtes vers l'API Google Maps
+  if (event.request.url.includes('maps.googleapis.com') ||
+      event.request.url.includes('google.com')) {
     return;
   }
 
   event.respondWith(
-    fetch(event.request)
+    caches.match(event.request)
       .then((response) => {
-        // Mettre en cache la nouvelle réponse
-        const responseClone = response.clone();
-        caches.open(CACHE_NAME)
-          .then((cache) => {
-            cache.put(event.request, responseClone);
-          });
+        // Cache hit - retourner la réponse du cache
+        if (response) {
+          // Vérifier si la ressource doit être mise à jour en arrière-plan
+          if (navigator.onLine) {
+            fetch(event.request)
+              .then((freshResponse) => {
+                if (freshResponse) {
+                  caches.open(CACHE_NAME)
+                    .then((cache) => {
+                      cache.put(event.request, freshResponse.clone());
+                    });
+                }
+              });
+          }
+          return response;
+        }
 
-        return response;
-      })
-      .catch(() => {
-        // Si la requête échoue, essayer de retourner la version en cache
-        return caches.match(event.request)
+        // Pas de correspondance dans le cache - récupérer depuis le réseau
+        return fetch(event.request)
           .then((response) => {
-            if (response) {
+            // Vérifier si la réponse est valide
+            if (!response || response.status !== 200 || response.type !== 'basic') {
               return response;
             }
-            // Si l'asset n'est pas en cache et que nous sommes hors ligne
-            if (event.request.headers.get('accept').includes('text/html')) {
+
+            // Mettre en cache la nouvelle ressource
+            const responseToCache = response.clone();
+            caches.open(DYNAMIC_CACHE)
+              .then((cache) => {
+                cache.put(event.request, responseToCache);
+              });
+
+            return response;
+          })
+          .catch(() => {
+            // Si la requête échoue (offline), retourner la page offline
+            if (event.request.mode === 'navigate') {
               return caches.match('/offline.html');
             }
+            // Pour les autres ressources, retourner une réponse vide
+            return new Response();
           });
       })
   );
+});
+
+// Gestion des messages depuis l'application
+self.addEventListener('message', (event) => {
+  if (event.data === 'skipWaiting') {
+    self.skipWaiting();
+  }
+  
+  if (event.data === 'clearCache') {
+    event.waitUntil(
+      caches.keys().then((cacheNames) => {
+        return Promise.all(
+          cacheNames.map((cacheName) => {
+            console.log('Nettoyage du cache:', cacheName);
+            return caches.delete(cacheName);
+          })
+        );
+      })
+    );
+  }
 }); 
