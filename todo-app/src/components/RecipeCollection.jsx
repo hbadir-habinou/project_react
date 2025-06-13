@@ -4,8 +4,8 @@ import { useState, useEffect } from "react"
 import { auth, db } from "../firebase"
 import { collection, onSnapshot, addDoc, updateDoc, doc, arrayUnion, arrayRemove } from "firebase/firestore"
 import { useLanguage } from "../contexts/LanguageContext"
-import { generateRecipe } from '../services/aiService'
-import ReactMarkdown from 'react-markdown'
+import { generateRecipeFromIngredients } from "../services/aiService"
+import ReactMarkdown from "react-markdown"
 
 const RecipeCollection = () => {
   const { t } = useLanguage()
@@ -19,8 +19,11 @@ const RecipeCollection = () => {
   const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [filterBy, setFilterBy] = useState("all") // all, liked, commented
-  const [generatedRecipe, setGeneratedRecipe] = useState(null)
-  const [error, setError] = useState(null)
+  const [aiRecipe, setAiRecipe] = useState("")
+  const [isGeneratingRecipe, setIsGeneratingRecipe] = useState(false)
+  const [generatingRecipeId, setGeneratingRecipeId] = useState(null)
+  const [showAiModal, setShowAiModal] = useState(false)
+  const [currentAiRecipe, setCurrentAiRecipe] = useState(null)
 
   useEffect(() => {
     // Écouter les recettes globales (recipes)
@@ -149,6 +152,27 @@ const RecipeCollection = () => {
     }
   }
 
+  const handleGenerateRecipe = async (recipe) => {
+    if (!recipe.ingredients || recipe.ingredients.length === 0) {
+      alert("Cette recette n'a pas d'ingrédients définis")
+      return
+    }
+
+    setIsGeneratingRecipe(true)
+    setGeneratingRecipeId(recipe.id)
+    try {
+      const generatedRecipe = await generateRecipeFromIngredients(recipe)
+      setCurrentAiRecipe(generatedRecipe)
+      setShowAiModal(true)
+    } catch (error) {
+      console.error("Erreur lors de la génération de la recette:", error)
+      alert("Une erreur s'est produite lors de la génération de la recette")
+    } finally {
+      setIsGeneratingRecipe(false)
+      setGeneratingRecipeId(null)
+    }
+  }
+
   const getStarRating = (likes = []) => {
     const likeCount = likes.length
     if (likeCount >= 50) return 5
@@ -169,7 +193,12 @@ const RecipeCollection = () => {
     ))
   }
 
-  const combinedRecipes = [...recipes, ...publicDishes]
+  // Combiner toutes les recettes (publiques et privées)
+  const combinedRecipes = [...recipes, ...publicDishes, ...userRecipes.map(recipe => ({
+    ...recipe,
+    source: "private",
+    authorName: auth.currentUser?.email
+  }))]
 
   const filteredRecipes = combinedRecipes.filter((recipe) => {
     const matchesSearch = recipe.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -183,26 +212,12 @@ const RecipeCollection = () => {
     return matchesSearch
   })
 
-  const handleGenerateRecipe = async (recipe) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const recipeText = await generateRecipe(recipe)
-      setGeneratedRecipe({ id: recipe.id, text: recipeText })
-    } catch (err) {
-      setError("Erreur lors de la génération de la recette")
-      console.error(err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   return (
     <div className="recipe-collection">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h4>
           <i className="fas fa-book-open me-2 text-primary"></i>
-          Collection de Recettes Communautaires
+          Collection de Recettes
         </h4>
         <div className="d-flex gap-2">
           <input
@@ -232,16 +247,29 @@ const RecipeCollection = () => {
           const likeCount = recipe.likes?.length || 0
           const commentCount = recipe.comments?.length || 0
           const starRating = getStarRating(recipe.likes)
+          const isPrivate = recipe.source === "private"
 
           return (
-            <div key={recipe.id} className="col-lg-4 col-md-6 mb-4">
+            <div key={`${recipe.source}-${recipe.id}`} className="col-lg-4 col-md-6 mb-4">
               <div className="card h-100 recipe-card-enhanced">
                 <div className="card-body">
                   <div className="d-flex justify-content-between align-items-start mb-2">
-                    <h5 className="card-title">{recipe.name}</h5>
+                    <h5 className="card-title">
+                      {recipe.name}
+                      {isPrivate && (
+                        <span className="badge bg-secondary ms-2" style={{ fontSize: "0.7rem" }}>
+                          <i className="fas fa-lock me-1"></i>
+                          Privé
+                        </span>
+                      )}
+                    </h5>
                     <div className="d-flex align-items-center">
-                      {renderStars(starRating)}
-                      <small className="text-muted ms-1">({likeCount})</small>
+                      {!isPrivate && (
+                        <>
+                          {renderStars(starRating)}
+                          <small className="text-muted ms-1">({likeCount})</small>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -251,7 +279,7 @@ const RecipeCollection = () => {
                       <i className="fas fa-clock me-1"></i>
                       {recipe.prepTime || "N/A"} min
                     </span>
-                    {recipe.authorName && recipe.source === "publicDishes" && (
+                    {recipe.authorName && (
                       <small className="text-muted d-block mt-1">Par : {recipe.authorName}</small>
                     )}
                   </div>
@@ -260,32 +288,48 @@ const RecipeCollection = () => {
 
                   <div className="d-flex justify-content-between align-items-center">
                     <div className="d-flex gap-2">
+                      {!isPrivate && (
+                        <>
+                          <button
+                            className={`btn btn-sm ${isLiked ? "btn-danger" : "btn-outline-danger"}`}
+                            onClick={() => handleLike(recipe.id, isLiked, recipe.source)}
+                          >
+                            <i className="fas fa-heart me-1"></i>
+                            {likeCount}
+                          </button>
+                          <button
+                            className="btn btn-sm btn-outline-primary"
+                            onClick={() => {
+                              setSelectedRecipe(recipe)
+                              setShowModal(true)
+                            }}
+                          >
+                            <i className="fas fa-comment me-1"></i>
+                            {commentCount}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    <div className="d-flex gap-2">
+                      {!isPrivate && (
+                        <button
+                          className="btn btn-sm btn-primary"
+                          onClick={() => handleImportRecipe(recipe)}
+                          disabled={loading}
+                        >
+                          <i className="fas fa-download me-1"></i>
+                          Importer
+                        </button>
+                      )}
                       <button
-                        className={`btn btn-sm ${isLiked ? "btn-danger" : "btn-outline-danger"}`}
-                        onClick={() => handleLike(recipe.id, isLiked, recipe.source)}
+                        className="btn btn-sm btn-info"
+                        onClick={() => handleGenerateRecipe(recipe)}
+                        disabled={isGeneratingRecipe && generatingRecipeId === recipe.id || !recipe.ingredients?.length}
                       >
-                        <i className="fas fa-heart me-1"></i>
-                        {likeCount}
-                      </button>
-                      <button
-                        className="btn btn-sm btn-outline-primary"
-                        onClick={() => {
-                          setSelectedRecipe(recipe)
-                          setShowModal(true)
-                        }}
-                      >
-                        <i className="fas fa-comment me-1"></i>
-                        {commentCount}
+                        <i className="fas fa-robot me-1"></i>
+                        {isGeneratingRecipe && generatingRecipeId === recipe.id ? "Génération..." : "Variante IA"}
                       </button>
                     </div>
-                    <button
-                      className="btn btn-sm btn-primary"
-                      onClick={() => handleImportRecipe(recipe)}
-                      disabled={loading}
-                    >
-                      <i className="fas fa-download me-1"></i>
-                      Importer
-                    </button>
                   </div>
                 </div>
               </div>
@@ -360,6 +404,28 @@ const RecipeCollection = () => {
                       </button>
                     </div>
                   </div>
+                  <div className="mb-4">
+                    {selectedRecipe.aiGeneratedVersion && (
+                      <div className="mb-4 mt-4">
+                        <div className="card">
+                          <div className="card-body">
+                            <h6 className="card-title d-flex align-items-center">
+                              <i className="fas fa-robot me-2 text-info"></i>
+                              Variante suggérée par l'IA
+                              {selectedRecipe.lastAiGeneration && (
+                                <small className="text-muted ms-2">
+                                  (Générée le {new Date(selectedRecipe.lastAiGeneration?.seconds * 1000 || selectedRecipe.lastAiGeneration).toLocaleString()})
+                                </small>
+                              )}
+                            </h6>
+                            <div className="ai-recipe-content">
+                              <ReactMarkdown>{selectedRecipe.aiGeneratedVersion}</ReactMarkdown>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   <div className="comments-list" style={{ maxHeight: "300px", overflowY: "auto" }}>
                     {selectedRecipe.comments?.map((comment) => (
@@ -390,18 +456,44 @@ const RecipeCollection = () => {
         </div>
       )}
 
-      {generatedRecipe && (
-        <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-          <h4 className="text-lg font-semibold mb-2">Recette Générée</h4>
-          <div className="prose max-w-none">
-            <ReactMarkdown>{generatedRecipe.text}</ReactMarkdown>
+      {/* Ajouter le modal AI après le modal existant */}
+      {showAiModal && currentAiRecipe && (
+        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
+          <div className="modal-dialog modal-lg">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title d-flex align-items-center">
+                  <i className="fas fa-robot me-2 text-info"></i>
+                  Recette générée par l'IA
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => {
+                    setShowAiModal(false)
+                    setCurrentAiRecipe(null)
+                  }}
+                ></button>
+              </div>
+              <div className="modal-body">
+                <div className="ai-recipe-content">
+                  <ReactMarkdown>{currentAiRecipe}</ReactMarkdown>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setShowAiModal(false)
+                    setCurrentAiRecipe(null)
+                  }}
+                >
+                  Fermer
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
-
-      {error && (
-        <div className="mt-4 p-4 bg-red-50 text-red-600 rounded-lg">
-          {error}
         </div>
       )}
     </div>

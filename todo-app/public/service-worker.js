@@ -1,122 +1,127 @@
-const CACHE_NAME = 'meal-planner-v1';
+const CACHE_NAME = 'family-planner-v1';
 const DYNAMIC_CACHE = 'dynamic-v1';
+const DATA_CACHE = 'data-v1';
 
-// Liste des ressources à mettre en cache
-const urlsToCache = [
+const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/offline.html',
   '/manifest.json',
-  '/icons/icon-192x192.png',
-  '/icons/icon-512x512.png'
+  '/offline.html',
+  '/assets/index.css',
+  '/assets/index.js',
+  '/icons/16.png',
+  '/icons/32.png',
+  '/icons/64.png',
+  '/icons/72.png',
+  '/icons/128.png',
+  '/icons/144.png',
+  '/icons/152.png',
+  '/icons/192.png',
+  '/icons/384.png',
+  '/icons/512.png',
+  '/icons/1024.png'
 ];
 
-// Installation du service worker
+// Installation du Service Worker
 self.addEventListener('install', (event) => {
+  console.log('[Service Worker] Installation');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('Cache ouvert');
-        return cache.addAll(urlsToCache);
+        console.log('[Service Worker] Mise en cache des ressources statiques');
+        return cache.addAll(STATIC_ASSETS);
       })
-      .then(() => self.skipWaiting()) // Force l'activation immédiate
+      .catch(error => {
+        console.error('[Service Worker] Erreur lors de la mise en cache:', error);
+      })
   );
+  self.skipWaiting();
 });
 
-// Activation du service worker
+// Activation du Service Worker
 self.addEventListener('activate', (event) => {
+  console.log('[Service Worker] Activation');
   event.waitUntil(
-    Promise.all([
-      // Nettoyage des anciens caches
-      caches.keys().then((cacheNames) => {
-        return Promise.all(
-          cacheNames.map((cacheName) => {
-            if (cacheName !== CACHE_NAME && cacheName !== DYNAMIC_CACHE) {
-              console.log('Suppression de l\'ancien cache:', cacheName);
-              return caches.delete(cacheName);
-            }
-          })
-        );
-      }),
-      // Prend le contrôle immédiatement
-      self.clients.claim()
-    ])
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          if (![CACHE_NAME, DYNAMIC_CACHE, DATA_CACHE].includes(cacheName)) {
+            console.log('[Service Worker] Suppression de l\'ancien cache:', cacheName);
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    })
   );
+  self.clients.claim();
 });
 
 // Interception des requêtes
 self.addEventListener('fetch', (event) => {
-  // Ignorer les requêtes vers l'API Google Maps
-  if (event.request.url.includes('maps.googleapis.com') ||
-      event.request.url.includes('google.com')) {
-    return;
-  }
+  const { request } = event;
 
-  event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        // Cache hit - retourner la réponse du cache
-        if (response) {
-          // Vérifier si la ressource doit être mise à jour en arrière-plan
-          if (navigator.onLine) {
-            fetch(event.request)
-              .then((freshResponse) => {
-                if (freshResponse) {
-                  caches.open(CACHE_NAME)
-                    .then((cache) => {
-                      cache.put(event.request, freshResponse.clone());
-                    });
-                }
-              });
-          }
-          return response;
-        }
+  // Ne pas mettre en cache les requêtes non GET
+  if (request.method !== 'GET') return;
 
-        // Pas de correspondance dans le cache - récupérer depuis le réseau
-        return fetch(event.request)
+  // Gestion des requêtes d'API
+  if (request.url.includes('firebaseio.com') || request.url.includes('googleapis.com')) {
+    event.respondWith(
+      caches.open(DATA_CACHE).then((cache) => {
+        return fetch(request)
           .then((response) => {
-            // Vérifier si la réponse est valide
-            if (!response || response.status !== 200 || response.type !== 'basic') {
-              return response;
+            if (response.ok) {
+              cache.put(request, response.clone());
             }
-
-            // Mettre en cache la nouvelle ressource
-            const responseToCache = response.clone();
-            caches.open(DYNAMIC_CACHE)
-              .then((cache) => {
-                cache.put(event.request, responseToCache);
-              });
-
             return response;
           })
           .catch(() => {
-            // Si la requête échoue (offline), retourner la page offline
-            if (event.request.mode === 'navigate') {
-              return caches.match('/offline.html');
-            }
-            // Pour les autres ressources, retourner une réponse vide
-            return new Response();
+            return cache.match(request);
           });
       })
-  );
-});
-
-// Gestion des messages depuis l'application
-self.addEventListener('message', (event) => {
-  if (event.data === 'skipWaiting') {
-    self.skipWaiting();
-  }
-  
-  if (event.data === 'clearCache') {
-    event.waitUntil(
-      caches.keys().then((cacheNames) => {
-        return Promise.all(
-          cacheNames.map((cacheName) => {
-            console.log('Nettoyage du cache:', cacheName);
-            return caches.delete(cacheName);
-          })
-        );
-      })
     );
+    return;
   }
+
+  // Stratégie pour les ressources statiques
+  if (STATIC_ASSETS.some(asset => request.url.includes(asset))) {
+    event.respondWith(
+      caches.match(request)
+        .then((response) => {
+          return response || fetch(request)
+            .then((fetchResponse) => {
+              return caches.open(CACHE_NAME)
+                .then((cache) => {
+                  cache.put(request, fetchResponse.clone());
+                  return fetchResponse;
+                });
+            });
+        })
+        .catch(() => {
+          if (request.headers.get('accept').includes('text/html')) {
+            return caches.match('/offline.html');
+          }
+        })
+    );
+    return;
+  }
+
+  // Stratégie pour les autres ressources
+  event.respondWith(
+    caches.match(request)
+      .then((response) => {
+        return response || fetch(request)
+          .then((fetchResponse) => {
+            return caches.open(DYNAMIC_CACHE)
+              .then((cache) => {
+                cache.put(request, fetchResponse.clone());
+                return fetchResponse;
+              });
+          });
+      })
+      .catch(() => {
+        if (request.headers.get('accept').includes('text/html')) {
+          return caches.match('/offline.html');
+        }
+      })
+  );
 }); 

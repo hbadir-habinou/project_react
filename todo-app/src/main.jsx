@@ -2,9 +2,10 @@ import React from "react"
 import ReactDOM from "react-dom/client"
 import { BrowserRouter } from "react-router-dom"
 import App from "./App"
+import { LanguageProvider } from "./contexts/LanguageContext"
+import { ThemeProvider } from "./contexts/ThemeContext"
 import "./App.css"
 import { offlineService } from "./services/offlineService"
-import 'leaflet/dist/leaflet.css'
 
 // Enregistrement du service worker
 if ('serviceWorker' in navigator) {
@@ -54,37 +55,14 @@ window.addEventListener('beforeinstallprompt', (e) => {
   console.log('Application installable détectée');
 });
 
-// Fonction pour gérer les mises à jour du service worker
-function handleServiceWorkerUpdate() {
-  if ('serviceWorker' in navigator) {
-    // Désinscrire tous les service workers existants
-    navigator.serviceWorker.getRegistrations().then(function(registrations) {
-      for(let registration of registrations) {
-        registration.unregister();
-      }
-    });
-  }
-}
-
-// Nettoyer le cache du navigateur
-function clearBrowserCache() {
-  if ('caches' in window) {
-    caches.keys().then(function(cacheNames) {
-      cacheNames.forEach(function(cacheName) {
-        caches.delete(cacheName);
-      });
-    });
-  }
-}
-
-// Initialiser le nettoyage
-handleServiceWorkerUpdate();
-clearBrowserCache();
-
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
-      <App />
+      <ThemeProvider>
+        <LanguageProvider>
+          <App />
+        </LanguageProvider>
+      </ThemeProvider>
     </BrowserRouter>
   </React.StrictMode>
 )

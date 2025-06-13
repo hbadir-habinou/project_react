@@ -1,24 +1,43 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
+const genAI = new GoogleGenerativeAI(
+  "AIzaSyD3gFI7eGKBejGYuvrZ1DFgj4y1MQndpkQ"
+);
 
-export const generateRecipe = async (dish) => {
-  const prompt = `En tant que chef cuisinier expert, générez une recette détaillée pour le plat suivant:
-  Nom du plat: ${dish.name}
-  Description: ${dish.description || "Non spécifiée"}
-  Ingrédients actuels: ${dish.ingredients ? dish.ingredients.map(i => i.name).join(", ") : "Non spécifiés"}
-  
-  Veuillez fournir:
-  1. Une liste complète des ingrédients nécessaires avec les quantités
-  2. Les étapes détaillées de préparation
-  3. Le temps de préparation et de cuisson
-  4. Des conseils et astuces pour réussir la recette
-  5. Des suggestions de variations ou d'accompagnements
-  
-  Formattez la réponse en Markdown pour une meilleure lisibilité.`;
+export const generateRecipeFromIngredients = async (recipe) => {
+  const formattedIngredients = recipe.ingredients.map(ing => 
+    `${ing.name || ing} ${ing.quantity ? `(${ing.quantity} ${ing.unit || 'unité'})` : ''}`
+  ).join('\n');
+
+  const prompt = `En tant que chef cuisinier expérimenté, créez une variante de la recette "${recipe.name}" en utilisant ces ingrédients:
+${formattedIngredients}
+
+La recette originale est de type "${recipe.type}" et prend environ ${recipe.prepTime || 'N/A'} minutes de préparation.
+${recipe.instructions ? `\nVoici les instructions originales pour référence:\n${recipe.instructions}\n` : ''}
+
+Veuillez fournir une variante créative qui reste fidèle à l'esprit de la recette originale mais avec une touche unique.
+
+Format de réponse souhaité en Markdown:
+# Variante de ${recipe.name}
+**Temps de préparation:** [durée similaire à l'original]
+
+## Ingrédients
+[utiliser les mêmes ingrédients avec possibilité d'ajustements mineurs]
+
+## Instructions
+[étapes numérotées avec votre approche unique]
+
+## Ce qui rend cette variante spéciale
+[expliquez les différences clés avec la recette originale]
+
+## Présentation
+[suggestions adaptées à cette variante]
+
+## Astuces du Chef
+[conseils pratiques spécifiques à cette variante]`;
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = await response.text();

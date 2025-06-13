@@ -25,7 +25,6 @@ const SignUp = ({ setIsAuth }) => {
   const [showProfileSelection, setShowProfileSelection] = useState(false)
   const [currentUser, setCurrentUser] = useState(null)
   const [isGuestMode, setIsGuestMode] = useState(false)
-  const [isVendor, setIsVendor] = useState(false)
 
   const fetchFamilyMembers = async (familyCode) => {
     try {
@@ -88,13 +87,6 @@ const SignUp = ({ setIsAuth }) => {
     setIsAuth(true)
     setCurrentUser(user)
 
-    if (isVendor) {
-      // Stocker le rôle vendeur dans le localStorage
-      localStorage.setItem('userRole', 'vendor')
-      navigate('/vendor-profile')
-      return
-    }
-
     // Si l'utilisateur a coché "Accéder avec un code famille", traiter comme mode invité
     if (showFamilyCodeInput && familyCode.trim()) {
       try {
@@ -125,7 +117,6 @@ const SignUp = ({ setIsAuth }) => {
       }
     } else {
       // Inscription normale sans code famille - ACCÈS COMPLET
-      localStorage.setItem('userRole', 'family')
       navigate("/complete-profile")
     }
   }
@@ -319,27 +310,15 @@ const SignUp = ({ setIsAuth }) => {
             )}
 
             <div className="space-y-4">
-              <div className="flex items-center space-x-4">
-                <label className="flex items-center space-x-2 text-sm font-medium text-gray-700 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showFamilyCodeInput}
-                    onChange={(e) => setShowFamilyCodeInput(e.target.checked)}
-                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                  />
-                  <span>Accéder avec un code famille (mode invité)</span>
-                </label>
-
-                <label className="flex items-center space-x-2 text-sm font-medium text-gray-700 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isVendor}
-                    onChange={(e) => setIsVendor(e.target.checked)}
-                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                  />
-                  <span>S'inscrire en tant que vendeur</span>
-                </label>
-              </div>
+              <label className="flex items-center space-x-2 text-sm font-medium text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showFamilyCodeInput}
+                  onChange={(e) => setShowFamilyCodeInput(e.target.checked)}
+                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span>Accéder avec un code famille (mode invité)</span>
+              </label>
 
               {showFamilyCodeInput ? (
                 <div className="space-y-4">
